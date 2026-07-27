@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary: codex-context-window
+            builder: cargo
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary: codex-context-window
+            builder: cargo
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            binary: codex-context-window
+            builder: cross
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            binary: codex-context-window
+            builder: cross
+          - target: aarch64-pc-windows-msvc
+            os: windows-2022
+            binary: codex-context-window.exe
+            builder: cargo
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+            binary: codex-context-window.exe
+            builder: cargo
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Configure MSVC for Arm64
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: arm64
+      - name: Install cross
+        if: matrix.builder == 'cross'
+        uses: taiki-e/install-action@2cdf2a98913db47b5d95ced4bb04aa7b346d7980 # cross
+      - name: Build with Cargo
+        if: matrix.builder == 'cargo'
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Build with cross
+        if: matrix.builder == 'cross'
+        run: cross build --release --locked --target ${{ matrix.target }}
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p "artifact/${{ matrix.target }}"
+          cp \
+            "target/${{ matrix.target }}/release/${{ matrix.binary }}" \
+            "artifact/${{ matrix.target }}/${{ matrix.binary }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.target }}
+          path: artifact/${{ matrix.target }}/${{ matrix.binary }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+      - name: Verify release version
+        shell: bash
+        run: |
+          manifest_version="$(
+            python3 -c \
+              'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])'
+          )"
+          if [[ "$GITHUB_REF_NAME" != "v${manifest_version}" ]]; then
+            echo "tag ${GITHUB_REF_NAME} does not match plugin version ${manifest_version}" >&2
+            exit 1
+          fi
+      - name: Stage marketplace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marketplace_root="${RUNNER_TEMP}/codex-context-window-marketplace"
+          plugin_root="${marketplace_root}/plugins/codex-context-window"
+
+          mkdir -p "${marketplace_root}/.agents/plugins" "${plugin_root}/bin"
+          cp -R .codex-plugin hooks docs CONTRIBUTING.md README.md LICENSE "${plugin_root}/"
+
+          while read -r target binary; do
+            destination="${plugin_root}/bin/${target}/${binary}"
+            mkdir -p "$(dirname "${destination}")"
+            cp "artifacts/${target}/${binary}" "${destination}"
+            if [[ "${binary}" != *.exe ]]; then
+              chmod 755 "${destination}"
+            fi
+          done <<'TARGETS'
+          aarch64-apple-darwin codex-context-window
+          x86_64-apple-darwin codex-context-window
+          aarch64-unknown-linux-musl codex-context-window
+          x86_64-unknown-linux-musl codex-context-window
+          aarch64-pc-windows-msvc codex-context-window.exe
+          x86_64-pc-windows-msvc codex-context-window.exe
+          TARGETS
+
+          chmod 755 "${plugin_root}/hooks/run-context-window.sh"
+
+          cat > "${marketplace_root}/.agents/plugins/marketplace.json" <<'JSON'
+          {
+            "name": "codex-context-window",
+            "interface": {
+              "displayName": "Codex Context Window"
+            },
+            "plugins": [
+              {
+                "name": "codex-context-window",
+                "source": {
+                  "source": "local",
+                  "path": "./plugins/codex-context-window"
+                },
+                "policy": {
+                  "installation": "AVAILABLE",
+                  "authentication": "ON_INSTALL"
+                },
+                "category": "Productivity"
+              }
+            ]
+          }
+          JSON
+      - name: Publish marketplace branch
+        working-directory: ${{ runner.temp }}/codex-context-window-marketplace
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git init --initial-branch=marketplace
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Publish ${GITHUB_REF_NAME}"
+          git remote add origin \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin marketplace
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --generate-notes
