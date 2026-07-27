@@ -83,6 +83,15 @@ In a 500-run reference benchmark on Apple Silicon macOS against a 7.8 MB active 
 
 The plugin reads Codex session files. These files are currently stored as JSONL and use the `rollout-` filename prefix. Their internal structure may change between Codex versions. If the expected token data is no longer available, the plugin exits successfully without adding anything to the model context.
 
+## Support
+
+I spent considerable time studying how Codex works and investigating the issues that sometimes make it perform worse than it should. Codex Context Window is one practical result of that work. Rather than keeping it as a private tool, I released it as open source so everyone can use it.
+
+If you find the project useful, you can support both the project and me as its author with a USDT donation:
+
+- ERC20: `0x9687CF4d903c73D126847712dEd10078d43E9aFc`
+- TON: `UQBEC4WAUr2smhYTxcUfgSQtPF0vz4B9lerO4sghXGyxyOTq`
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local development and release instructions.
