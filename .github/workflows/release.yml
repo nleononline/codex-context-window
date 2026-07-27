@@ -8,6 +8,32 @@ permissions:
   contents: read
 
 jobs:
+  release-notes:
+    name: Validate release notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate versioned release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          manifest_version="$(
+            python3 -c \
+              'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])'
+          )"
+          release_notes_file=".github/release-notes/v${manifest_version}.md"
+
+          if [[ ! -s "${release_notes_file}" ]]; then
+            echo "release notes file ${release_notes_file} is missing or empty" >&2
+            exit 1
+          fi
+
+          if grep -q "release-notes-template" "${release_notes_file}"; then
+            echo "release notes file ${release_notes_file} still contains the template marker" >&2
+            exit 1
+          fi
+
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -74,7 +100,9 @@ jobs:
   publish:
     name: Publish marketplace
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
-    needs: build
+    needs:
+      - build
+      - release-notes
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -91,11 +119,13 @@ jobs:
               'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])'
           )"
           release_tag="v${manifest_version}"
+          release_notes_file=".github/release-notes/${release_tag}.md"
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
             echo "tag ${release_tag} already exists" >&2
             exit 1
           fi
           echo "RELEASE_TAG=${release_tag}" >> "$GITHUB_ENV"
+          echo "RELEASE_NOTES_FILE=${release_notes_file}" >> "$GITHUB_ENV"
       - name: Stage marketplace
         shell: bash
         run: |
@@ -166,4 +196,4 @@ jobs:
         run: >-
           gh release create "${RELEASE_TAG}"
           --target "${GITHUB_SHA}"
-          --generate-notes
+          --notes-file "${RELEASE_NOTES_FILE}"
