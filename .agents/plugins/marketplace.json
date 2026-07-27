@@ -1,0 +1,20 @@
+{
+  "name": "codex-context-window",
+  "interface": {
+    "displayName": "Codex Context Window"
+  },
+  "plugins": [
+    {
+      "name": "codex-context-window",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-context-window"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
