@@ -1,0 +1,54 @@
+{
+  "description": "Keep Codex aware of the active context-window usage.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${PLUGIN_ROOT}/hooks/run-context-window.sh\"",
+            "commandWindows": "cmd.exe /d /c call \"%PLUGIN_ROOT%\\hooks\\run-context-window.cmd\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${PLUGIN_ROOT}/hooks/run-context-window.sh\"",
+            "commandWindows": "cmd.exe /d /c call \"%PLUGIN_ROOT%\\hooks\\run-context-window.cmd\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${PLUGIN_ROOT}/hooks/run-context-window.sh\"",
+            "commandWindows": "cmd.exe /d /c call \"%PLUGIN_ROOT%\\hooks\\run-context-window.cmd\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${PLUGIN_ROOT}/hooks/run-context-window.sh\"",
+            "commandWindows": "cmd.exe /d /c call \"%PLUGIN_ROOT%\\hooks\\run-context-window.cmd\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+[package]
+name = "codex-context-window"
+version = "0.1.0"
+edition = "2021"
+description = "Native Codex hook for reporting context-window usage"
+license = "MIT"
+repository = "https://github.com/nleononline/codex-context-window"
+
+[dependencies]
+memchr = "2.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"
