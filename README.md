@@ -58,11 +58,7 @@ The plugin reads local session data only and makes no network requests.
 
 ### Hook coverage
 
-- `SessionStart`
-  - `startup`: `<meta>YOUR SESSION JUST STARTED</meta>`
-  - `compact`: `<meta>YOUR CONTEXT WAS JUST COMPACTED</meta>`
-  - `clear`: `<meta>YOUR CONTEXT WAS JUST CLEARED</meta>`
-- `SubagentStart`: the new subagent session just started
+- `SessionStart` with source `compact`: `<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>`
 - `UserPromptSubmit` and `PostToolUse`: current usage as model-visible `additionalContext`
 
 Set `CODEX_CONTEXT_WINDOW_DEBUG=1` before starting Codex to append the originating hook to every signal and print handler errors to `stderr`:

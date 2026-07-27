@@ -58,11 +58,7 @@ payload.info.model_context_window
 
 ### Покрытие хуков
 
-- `SessionStart`
-  - `startup`: `<meta>YOUR SESSION JUST STARTED</meta>`
-  - `compact`: `<meta>YOUR CONTEXT WAS JUST COMPACTED</meta>`
-  - `clear`: `<meta>YOUR CONTEXT WAS JUST CLEARED</meta>`
-- `SubagentStart`: новая сессия субагента только что запущена
+- `SessionStart` с источником `compact`: `<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>`
 - `UserPromptSubmit` и `PostToolUse`: текущая заполненность контекстного окна в видимом модели `additionalContext`
 
 Установите `CODEX_CONTEXT_WINDOW_DEBUG=1` перед запуском Codex, чтобы плагин добавлял название вызванного хука к каждому сигналу и выводил ошибки обработчика в `stderr`:

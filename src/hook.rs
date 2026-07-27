@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 const META_OPEN: &str = "<meta>";
 const META_CLOSE: &str = "</meta>";
 
-pub const SESSION_STARTED_MESSAGE: &str = "<meta>YOUR SESSION JUST STARTED</meta>";
-pub const CONTEXT_CLEARED_MESSAGE: &str = "<meta>YOUR CONTEXT WAS JUST CLEARED</meta>";
-pub const CONTEXT_COMPACTED_MESSAGE: &str = "<meta>YOUR CONTEXT WAS JUST COMPACTED</meta>";
+pub const CONTEXT_COMPACTED_MESSAGE: &str = "<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct HookInput {
@@ -66,10 +64,7 @@ fn context_window_message(input: &HookInput, codex_home: Option<&Path>) -> Optio
 
 pub fn message_for_hook(input: &HookInput, codex_home: Option<&Path>) -> Option<String> {
     match (input.hook_event_name.as_deref(), input.source.as_deref()) {
-        (Some("SessionStart"), Some("startup")) => Some(SESSION_STARTED_MESSAGE.to_owned()),
-        (Some("SessionStart"), Some("clear")) => Some(CONTEXT_CLEARED_MESSAGE.to_owned()),
         (Some("SessionStart"), Some("compact")) => Some(CONTEXT_COMPACTED_MESSAGE.to_owned()),
-        (Some("SubagentStart"), _) => Some(SESSION_STARTED_MESSAGE.to_owned()),
         (Some("UserPromptSubmit"), _) | (Some("PostToolUse"), _) => {
             context_window_message(input, codex_home)
         }
@@ -126,22 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn returns_lifecycle_specific_output() {
-        let startup = HookInput {
-            hook_event_name: Some("SessionStart".to_owned()),
-            source: Some("startup".to_owned()),
-            ..HookInput::default()
-        };
-        assert_eq!(
-            serde_json::to_value(create_hook_output(&startup, None).unwrap()).unwrap(),
-            json!({
-                "hookSpecificOutput": {
-                    "hookEventName": "SessionStart",
-                    "additionalContext": SESSION_STARTED_MESSAGE
-                }
-            })
-        );
-
+    fn returns_compaction_output() {
         let compact = HookInput {
             hook_event_name: Some("SessionStart".to_owned()),
             source: Some("compact".to_owned()),
@@ -152,21 +132,8 @@ mod tests {
             json!({
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
-                    "additionalContext": CONTEXT_COMPACTED_MESSAGE
-                }
-            })
-        );
-
-        let subagent_start = HookInput {
-            hook_event_name: Some("SubagentStart".to_owned()),
-            ..HookInput::default()
-        };
-        assert_eq!(
-            serde_json::to_value(create_hook_output(&subagent_start, None).unwrap()).unwrap(),
-            json!({
-                "hookSpecificOutput": {
-                    "hookEventName": "SubagentStart",
-                    "additionalContext": SESSION_STARTED_MESSAGE
+                    "additionalContext":
+                        "<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>"
                 }
             })
         );
@@ -188,21 +155,23 @@ mod tests {
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
                     "additionalContext":
-                        "<meta>YOUR CONTEXT WAS JUST COMPACTED (hook: SessionStart)</meta>"
+                        "<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED. (hook: SessionStart)</meta>"
                 }
             })
         );
     }
 
     #[test]
-    fn ignores_resumed_session_start() {
-        let input = HookInput {
-            hook_event_name: Some("SessionStart".to_owned()),
-            source: Some("resume".to_owned()),
-            ..HookInput::default()
-        };
+    fn ignores_non_compaction_session_starts() {
+        for source in ["startup", "clear", "resume"] {
+            let input = HookInput {
+                hook_event_name: Some("SessionStart".to_owned()),
+                source: Some(source.to_owned()),
+                ..HookInput::default()
+            };
 
-        assert_eq!(create_hook_output(&input, None), None);
+            assert_eq!(create_hook_output(&input, None), None);
+        }
     }
 
     #[test]
@@ -247,11 +216,13 @@ mod tests {
 
     #[test]
     fn ignores_unconfigured_hook_events() {
-        let input = HookInput {
-            hook_event_name: Some("PreToolUse".to_owned()),
-            ..HookInput::default()
-        };
+        for hook_event_name in ["PreToolUse", "SubagentStart"] {
+            let input = HookInput {
+                hook_event_name: Some(hook_event_name.to_owned()),
+                ..HookInput::default()
+            };
 
-        assert_eq!(create_hook_output(&input, None), None);
+            assert_eq!(create_hook_output(&input, None), None);
+        }
     }
 }
