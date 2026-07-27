@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,7 +48,7 @@ jobs:
         if: matrix.target == 'aarch64-pc-windows-msvc'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
-          arch: arm64
+          arch: amd64_arm64
       - name: Install cross
         if: matrix.builder == 'cross'
         uses: taiki-e/install-action@2cdf2a98913db47b5d95ced4bb04aa7b346d7980 # cross
@@ -74,6 +73,7 @@ jobs:
 
   publish:
     name: Publish marketplace
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -90,10 +90,12 @@ jobs:
             python3 -c \
               'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])'
           )"
-          if [[ "$GITHUB_REF_NAME" != "v${manifest_version}" ]]; then
-            echo "tag ${GITHUB_REF_NAME} does not match plugin version ${manifest_version}" >&2
+          release_tag="v${manifest_version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
+            echo "tag ${release_tag} already exists" >&2
             exit 1
           fi
+          echo "RELEASE_TAG=${release_tag}" >> "$GITHUB_ENV"
       - name: Stage marketplace
         shell: bash
         run: |
@@ -154,11 +156,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "Publish ${GITHUB_REF_NAME}"
+          git commit -m "Publish ${RELEASE_TAG}"
           git remote add origin \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin marketplace
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --generate-notes
+        run: >-
+          gh release create "${RELEASE_TAG}"
+          --target "${GITHUB_SHA}"
+          --generate-notes
