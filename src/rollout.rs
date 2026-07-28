@@ -13,20 +13,20 @@ pub struct TokenUsage {
     pub limit: u64,
 }
 
-enum TokenCountLine {
-    NotTokenCount,
-    TokenCount(Option<TokenUsage>),
+enum RelevantLine<T> {
+    Irrelevant,
+    Relevant(Option<T>),
 }
 
-fn token_usage_from_line(line: &[u8]) -> TokenCountLine {
+fn token_usage_from_line(line: &[u8]) -> RelevantLine<TokenUsage> {
     let Ok(record) = serde_json::from_slice::<Value>(line) else {
-        return TokenCountLine::NotTokenCount;
+        return RelevantLine::Irrelevant;
     };
 
     if record.get("type").and_then(Value::as_str) != Some("event_msg")
         || record.pointer("/payload/type").and_then(Value::as_str) != Some("token_count")
     {
-        return TokenCountLine::NotTokenCount;
+        return RelevantLine::Irrelevant;
     }
 
     let used = record
@@ -37,13 +37,35 @@ fn token_usage_from_line(line: &[u8]) -> TokenCountLine {
         .and_then(Value::as_u64)
         .filter(|limit| *limit > 0);
 
-    TokenCountLine::TokenCount(
+    RelevantLine::Relevant(
         used.zip(limit)
             .map(|(used, limit)| TokenUsage { used, limit }),
     )
 }
 
-pub fn read_last_token_usage(file_path: &Path) -> io::Result<Option<TokenUsage>> {
+fn context_window_limit_from_line(line: &[u8]) -> RelevantLine<u64> {
+    let Ok(record) = serde_json::from_slice::<Value>(line) else {
+        return RelevantLine::Irrelevant;
+    };
+
+    if record.get("type").and_then(Value::as_str) != Some("event_msg")
+        || record.pointer("/payload/type").and_then(Value::as_str) != Some("task_started")
+    {
+        return RelevantLine::Irrelevant;
+    }
+
+    let limit = record
+        .pointer("/payload/model_context_window")
+        .and_then(Value::as_u64)
+        .filter(|limit| *limit > 0);
+
+    RelevantLine::Relevant(limit)
+}
+
+fn read_last_relevant<T>(
+    file_path: &Path,
+    parse_line: impl Fn(&[u8]) -> RelevantLine<T>,
+) -> io::Result<Option<T>> {
     let mut file = File::open(file_path)?;
     let mut position = file.metadata()?.len();
     let mut carry = Vec::new();
@@ -62,9 +84,9 @@ pub fn read_last_token_usage(file_path: &Path) -> io::Result<Option<TokenUsage>>
         for newline_index in memrchr_iter(b'\n', &data) {
             let line = &data[newline_index + 1..line_end];
             if !line.is_empty() {
-                match token_usage_from_line(line) {
-                    TokenCountLine::NotTokenCount => {}
-                    TokenCountLine::TokenCount(usage) => return Ok(usage),
+                match parse_line(line) {
+                    RelevantLine::Irrelevant => {}
+                    RelevantLine::Relevant(value) => return Ok(value),
                 }
             }
             line_end = newline_index;
@@ -74,12 +96,20 @@ pub fn read_last_token_usage(file_path: &Path) -> io::Result<Option<TokenUsage>>
     }
 
     if !carry.is_empty() {
-        if let TokenCountLine::TokenCount(usage) = token_usage_from_line(&carry) {
-            return Ok(usage);
+        if let RelevantLine::Relevant(value) = parse_line(&carry) {
+            return Ok(value);
         }
     }
 
     Ok(None)
+}
+
+pub fn read_last_token_usage(file_path: &Path) -> io::Result<Option<TokenUsage>> {
+    read_last_relevant(file_path, token_usage_from_line)
+}
+
+pub fn read_context_window_limit(file_path: &Path) -> io::Result<Option<u64>> {
+    read_last_relevant(file_path, context_window_limit_from_line)
 }
 
 fn matches_rollout_name(file_path: &Path, session_id: &str) -> bool {
@@ -161,7 +191,7 @@ pub fn find_session_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{token_count, TempDirectory};
+    use crate::test_support::{task_started, token_count, TempDirectory};
     use serde_json::json;
     use std::io::Write;
 
@@ -245,6 +275,43 @@ mod tests {
         .unwrap();
 
         assert_eq!(read_last_token_usage(&rollout).unwrap(), None);
+    }
+
+    #[test]
+    fn reads_context_window_limit_from_task_started() {
+        let temp = TempDirectory::new();
+        let rollout = temp.path().join("rollout-test-thread.jsonl");
+        fs::write(
+            &rollout,
+            format!(
+                "{}\n{}\n",
+                task_started(258_400),
+                json!({"type": "turn_context"})
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(read_context_window_limit(&rollout).unwrap(), Some(258_400));
+    }
+
+    #[test]
+    fn does_not_use_stale_limit_when_newest_task_start_lacks_it() {
+        let temp = TempDirectory::new();
+        let rollout = temp.path().join("rollout-test-thread.jsonl");
+        fs::write(
+            &rollout,
+            format!(
+                "{}\n{}\n",
+                task_started(258_400),
+                json!({
+                    "type": "event_msg",
+                    "payload": {"type": "task_started"}
+                })
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(read_context_window_limit(&rollout).unwrap(), None);
     }
 
     #[test]

@@ -39,29 +39,23 @@ codex plugin add codex-context-window@codex-context-window
 
 ## How it works
 
-When Codex invokes a hook, its input normally includes `transcript_path`, the path to the current session file. The handler reads this JSONL file directly. If the field is missing or the path does not point to a file, it uses `session_id` from the same hook input and searches:
+The plugin uses lifecycle hooks to give the model context-window information while it works.
 
-```text
-${CODEX_HOME:-~/.codex}/sessions/**/rollout-*-${session_id}.jsonl
-```
+The handler is written in Rust and runs only for the duration of each hook invocation. It reads the session file backwards in 64 KiB blocks and stops at the first relevant event, so it does not read the entire session file.
 
-The fallback is accepted only when it finds exactly one matching file. The selected JSONL file is scanned backwards. From the newest record where `type == "event_msg"` and `payload.type == "token_count"`, the plugin reads:
+The plugin includes prebuilt binaries for macOS, Linux, and Windows on Arm64 and x86-64, so no additional dependencies are required.
 
-```text
-payload.info.last_token_usage.total_tokens
-payload.info.model_context_window
-```
-
-If the session file or token data is missing or unreadable, the hook exits successfully without producing output.
-
-The plugin reads local session data only and makes no network requests.
+**All data is read locally from the current session, and the plugin makes no network requests.**
 
 ### Hook coverage
 
-- `SessionStart` with source `compact`: `<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>`
-- `UserPromptSubmit` and `PostToolUse`: current usage as model-visible `additionalContext`
+- `SessionStart` with source `startup`: provides the effective context-window limit and warns that automatic compaction may happen before reported usage reaches it.
+- `UserPromptSubmit` and `PostToolUse`: provide the latest available context-window usage.
+- `SessionStart` with source `compact`: reminds the model to verify that the task goal, requirements, decisions, and current progress were not lost.
 
-Set `CODEX_CONTEXT_WINDOW_DEBUG=1` before starting Codex to append the originating hook to every signal and print handler errors to `stderr`:
+### Debug mode
+
+Set `CODEX_CONTEXT_WINDOW_DEBUG=1` before starting Codex to see which hook produced each signal:
 
 ```text
 <meta>YOUR CONTEXT WINDOW: 193800 / 258400 (75%) (hook: UserPromptSubmit)</meta>
@@ -69,15 +63,11 @@ Set `CODEX_CONTEXT_WINDOW_DEBUG=1` before starting Codex to append the originati
 
 ## Performance and overhead
 
-The hook handler is written in Rust to minimize runtime overhead. Prebuilt, self-contained binaries are included for macOS, Linux, and Windows on Arm64 and x86-64. The platform launcher selects the correct binary automatically, so no additional runtime, tool, or package is required after installation.
-
-The handler runs as a short-lived native process. It scans the transcript backwards in 64 KiB blocks and stops at the newest token-count event, so it does not normally read or parse the full session file.
-
-In a 500-run reference benchmark on Apple Silicon macOS against a 7.8 MB active transcript, a complete usage hook invocation took 9.2 ms median and 12.3 ms p95, including the POSIX launcher and process startup. A lifecycle-only invocation took 9.0 ms median, indicating that process startup dominates the total overhead. Results vary by platform, storage, and system load.
+In a 500-run Apple Silicon benchmark with a 7.8 MB session file, the median time for a complete hook invocation was 9.2 ms. Most of that time was process startup. Actual results depend on your system.
 
 ## Compatibility
 
-The plugin reads Codex session files. These files are currently stored as JSONL and use the `rollout-` filename prefix. Their internal structure may change between Codex versions. If the expected token data is no longer available, the plugin exits successfully without adding anything to the model context.
+The plugin reads Codex session files, whose format may change after an app update. If the plugin can no longer obtain the needed data, it simply adds nothing to the model context and does not interrupt Codex.
 
 ## Support
 

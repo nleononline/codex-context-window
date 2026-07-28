@@ -50,3 +50,14 @@ pub fn token_count(used: u64, limit: u64) -> String {
     })
     .to_string()
 }
+
+pub fn task_started(limit: u64) -> String {
+    json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "task_started",
+            "model_context_window": limit
+        }
+    })
+    .to_string()
+}

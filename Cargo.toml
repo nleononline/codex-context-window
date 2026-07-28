@@ -1,8 +1,8 @@
 [package]
 name = "codex-context-window"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
-description = "Native Codex hook for reporting context-window usage"
+description = "Native Codex hook for reporting context-window limits and usage"
 license = "MIT"
 repository = "https://github.com/nleononline/codex-context-window"
 

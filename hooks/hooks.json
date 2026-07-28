@@ -1,9 +1,9 @@
 {
-  "description": "Keep Codex aware of the active context-window usage.",
+  "description": "Keep Codex aware of its context-window limit and usage.",
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "compact",
+        "matcher": "startup|compact",
         "hooks": [
           {
             "type": "command",

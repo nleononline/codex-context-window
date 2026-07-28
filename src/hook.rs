@@ -1,4 +1,6 @@
-use crate::rollout::{find_session_file, read_last_token_usage, TokenUsage};
+use crate::rollout::{
+    find_session_file, read_context_window_limit, read_last_token_usage, TokenUsage,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -41,6 +43,12 @@ pub fn format_context_window(usage: TokenUsage) -> String {
     )
 }
 
+pub fn format_context_window_limit(limit: u64) -> String {
+    format!(
+        "{META_OPEN}YOUR CONTEXT WINDOW LIMIT IS {limit} TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.{META_CLOSE}"
+    )
+}
+
 fn append_debug_hook(message: String, hook_event_name: &str) -> String {
     let Some(content) = message.strip_suffix(META_CLOSE) else {
         return message;
@@ -49,12 +57,16 @@ fn append_debug_hook(message: String, hook_event_name: &str) -> String {
     format!("{content} (hook: {hook_event_name}){META_CLOSE}")
 }
 
-fn context_window_message(input: &HookInput, codex_home: Option<&Path>) -> Option<String> {
-    let session_file = find_session_file(
+fn session_file(input: &HookInput, codex_home: Option<&Path>) -> Option<PathBuf> {
+    find_session_file(
         input.transcript_path.as_deref(),
         input.session_id.as_deref(),
         codex_home,
-    )?;
+    )
+}
+
+fn context_window_message(input: &HookInput, codex_home: Option<&Path>) -> Option<String> {
+    let session_file = session_file(input, codex_home)?;
 
     match read_last_token_usage(&session_file) {
         Ok(Some(usage)) => Some(format_context_window(usage)),
@@ -62,8 +74,18 @@ fn context_window_message(input: &HookInput, codex_home: Option<&Path>) -> Optio
     }
 }
 
+fn context_window_limit_message(input: &HookInput, codex_home: Option<&Path>) -> Option<String> {
+    let session_file = session_file(input, codex_home)?;
+
+    match read_context_window_limit(&session_file) {
+        Ok(Some(limit)) => Some(format_context_window_limit(limit)),
+        Ok(None) | Err(_) => None,
+    }
+}
+
 pub fn message_for_hook(input: &HookInput, codex_home: Option<&Path>) -> Option<String> {
     match (input.hook_event_name.as_deref(), input.source.as_deref()) {
+        (Some("SessionStart"), Some("startup")) => context_window_limit_message(input, codex_home),
         (Some("SessionStart"), Some("compact")) => Some(CONTEXT_COMPACTED_MESSAGE.to_owned()),
         (Some("UserPromptSubmit"), _) | (Some("PostToolUse"), _) => {
             context_window_message(input, codex_home)
@@ -98,7 +120,7 @@ pub fn create_hook_output_with_debug(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{token_count, TempDirectory};
+    use crate::test_support::{task_started, token_count, TempDirectory};
     use serde_json::json;
     use std::fs;
 
@@ -117,6 +139,38 @@ mod tests {
                 limit: 1_000,
             }),
             "<meta>YOUR CONTEXT WINDOW: 500 / 1000 (50%)</meta>"
+        );
+    }
+
+    #[test]
+    fn formats_startup_context_limit() {
+        assert_eq!(
+            format_context_window_limit(258_400),
+            "<meta>YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.</meta>"
+        );
+    }
+
+    #[test]
+    fn returns_startup_context_limit() {
+        let temp = TempDirectory::new();
+        let rollout = temp.path().join("rollout-test-thread.jsonl");
+        fs::write(&rollout, format!("{}\n", task_started(258_400))).unwrap();
+        let startup = HookInput {
+            transcript_path: Some(rollout),
+            hook_event_name: Some("SessionStart".to_owned()),
+            source: Some("startup".to_owned()),
+            ..HookInput::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(create_hook_output(&startup, None).unwrap()).unwrap(),
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext":
+                        "<meta>YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.</meta>"
+                }
+            })
         );
     }
 
@@ -162,8 +216,8 @@ mod tests {
     }
 
     #[test]
-    fn ignores_non_compaction_session_starts() {
-        for source in ["startup", "clear", "resume"] {
+    fn ignores_unconfigured_session_starts() {
+        for source in ["clear", "resume"] {
             let input = HookInput {
                 hook_event_name: Some("SessionStart".to_owned()),
                 source: Some(source.to_owned()),
@@ -205,6 +259,21 @@ mod tests {
         let input = HookInput {
             session_id: Some("missing-session".to_owned()),
             hook_event_name: Some("PostToolUse".to_owned()),
+            ..HookInput::default()
+        };
+
+        assert_eq!(
+            create_hook_output(&input, Some(Path::new("/definitely/missing"))),
+            None
+        );
+    }
+
+    #[test]
+    fn emits_nothing_when_startup_limit_is_unknown() {
+        let input = HookInput {
+            session_id: Some("missing-session".to_owned()),
+            hook_event_name: Some("SessionStart".to_owned()),
+            source: Some("startup".to_owned()),
             ..HookInput::default()
         };
 
