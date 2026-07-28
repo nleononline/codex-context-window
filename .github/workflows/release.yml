@@ -182,14 +182,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+
           git init --initial-branch=marketplace
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Publish ${RELEASE_TAG}"
           git remote add origin \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin marketplace
+
+          remote_marketplace="$(
+            git ls-remote --heads origin refs/heads/marketplace
+          )"
+          if [[ -n "${remote_marketplace}" ]]; then
+            git fetch --depth=1 origin marketplace
+            git reset --mixed FETCH_HEAD
+          fi
+
+          git add --all
+          git commit -m "Publish ${RELEASE_TAG}"
+          git push origin marketplace
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
