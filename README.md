@@ -14,6 +14,12 @@ The plugin does not save or restore information itself. It only provides a compa
 <meta>YOUR CONTEXT WINDOW: 193800 / 258400 (75%)</meta>
 ```
 
+Codex Context Window provides awareness without prescribing a fixed workflow. It does not choose a usage threshold, storage location, or checkpoint format. If you want specific behavior, define it in `AGENTS.md` or your Codex system instructions, for example:
+
+```text
+When the context window reaches 70% usage, save intermediate results, task state, key requirements, and anything else needed to continue working correctly without losing progress.
+```
+
 ## Installation
 
 Codex Context Window is distributed through a Git-backed Codex plugin marketplace. Install the marketplace and the plugin from a terminal:
