@@ -6,13 +6,17 @@ Context windows fill up. When Codex compacts a long conversation to make room, i
 
 By default, the model cannot see how much context remains. It does not know when compaction is approaching, so it has no chance to checkpoint its working state or adjust how it continues beforehand.
 
-Codex Context Window closes that blind spot. Through lifecycle hooks, the model receives the current state of its own context window and can take that information into account while working. This awareness can help it preserve important intermediate results before compaction and reduce the risk of errors afterward.
+Codex Context Window closes that blind spot. Through lifecycle hooks, the model receives the current state of its own context window and can take that information into account while working. This awareness can help it make sure important intermediate results are not lost during compaction—this can reduce the risk of errors afterward.
 
 The plugin does not save or restore information itself. It only provides a compact signal:
 
 ```text
 <meta>YOUR CONTEXT WINDOW: 193800 / 258400 (75%)</meta>
 ```
+
+Codex Context Window encourages the model to account for its context-window state so important information is not lost during compaction, **but it does not prescribe a specific response**. The model can decide whether to save intermediate state, where and how to store it, or whether preparing key information for compaction is enough.
+
+By default, from 70% reported usage onward, the plugin asks the model to keep the risk of compaction in mind as it continues working, so information needed to continue correctly is not lost. If you prefer, you can define the desired behavior in `AGENTS.md` or the Codex system instructions: specify whether the model should save intermediate information to files and, if so, what to save, where, and how. Without such instructions, the model chooses the approach itself.
 
 ## Installation
 
@@ -49,10 +53,25 @@ The plugin includes prebuilt binaries for macOS, Linux, and Windows on Arm64 and
 
 ### Hook coverage
 
-- `SessionStart` with source `startup`: provides the effective context-window limit and warns that automatic compaction may happen before reported usage reaches it.
-- `SubagentStart`: provides the effective context-window limit for the new subagent from its own session file.
-- `UserPromptSubmit` and `PostToolUse`: provide the latest available context-window usage.
-- `SessionStart` with source `compact`: reminds the model to verify that the task goal, requirements, decisions, and current progress were not lost.
+The placeholders below are replaced with values from the current session.
+
+- `SessionStart` with source `startup` runs at the beginning of each new session and provides its effective context-window limit, while `SubagentStart` provides the limit for the new subagent from its own session file. Both inject:
+
+  ```text
+  <meta>YOUR CONTEXT WINDOW LIMIT IS {limit} TOKENS. AUTOMATIC COMPACTION MAY OCCUR BEFORE THE LIMIT IS REACHED. UNLESS APPLICABLE INSTRUCTIONS SPECIFY DIFFERENT BEHAVIOR, FROM 70% REPORTED USAGE ONWARD, KEEP THE RISK OF COMPACTION IN MIND AS YOU CONTINUE WORKING AND MAKE SURE CONTEXT COMPACTION DOES NOT CAUSE THE LOSS OF INFORMATION NEEDED TO CONTINUE WORK CORRECTLY, INCLUDING KEY REQUIREMENTS, DECISIONS, INTERMEDIATE RESULTS, AND TASK STATE.</meta>
+  ```
+
+- `UserPromptSubmit` and `PostToolUse` provide the latest available context-window usage:
+
+  ```text
+  <meta>YOUR CONTEXT WINDOW: {used} / {limit} ({percent}%)</meta>
+  ```
+
+- `SessionStart` with source `compact` runs after compaction. It reports the transition and restores the guidance that may have been removed from the previous context:
+
+  ```text
+  <meta>YOUR CONTEXT WAS JUST COMPACTED. MAKE SURE ALL INFORMATION NEEDED TO CONTINUE WORK CORRECTLY REMAINS AVAILABLE. YOUR CONTEXT WINDOW LIMIT IS {limit} TOKENS. AUTOMATIC COMPACTION MAY OCCUR BEFORE THE LIMIT IS REACHED. UNLESS APPLICABLE INSTRUCTIONS SPECIFY DIFFERENT BEHAVIOR, FROM 70% REPORTED USAGE ONWARD, KEEP THE RISK OF COMPACTION IN MIND AS YOU CONTINUE WORKING AND MAKE SURE CONTEXT COMPACTION DOES NOT CAUSE THE LOSS OF INFORMATION NEEDED TO CONTINUE WORK CORRECTLY, INCLUDING KEY REQUIREMENTS, DECISIONS, INTERMEDIATE RESULTS, AND TASK STATE.</meta>
+  ```
 
 ### Debug mode
 
