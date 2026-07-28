@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 const META_OPEN: &str = "<meta>";
 const META_CLOSE: &str = "</meta>";
-
-pub const CONTEXT_COMPACTED_MESSAGE: &str = "<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>";
+const CONTEXT_COMPACTED_NOTICE: &str = "YOUR CONTEXT WAS JUST COMPACTED. MAKE SURE ALL INFORMATION NEEDED TO CONTINUE WORK CORRECTLY REMAINS AVAILABLE.";
+const CONTEXT_WINDOW_POLICY: &str = "AUTOMATIC COMPACTION MAY OCCUR BEFORE THE LIMIT IS REACHED. UNLESS APPLICABLE INSTRUCTIONS SPECIFY DIFFERENT BEHAVIOR, FROM 70% REPORTED USAGE ONWARD, KEEP THE RISK OF COMPACTION IN MIND AS YOU CONTINUE WORKING AND MAKE SURE CONTEXT COMPACTION DOES NOT CAUSE THE LOSS OF INFORMATION NEEDED TO CONTINUE WORK CORRECTLY, INCLUDING KEY REQUIREMENTS, DECISIONS, INTERMEDIATE RESULTS, AND TASK STATE.";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct HookInput {
@@ -40,10 +40,22 @@ pub fn format_context_window(usage: TokenUsage) -> String {
     )
 }
 
+fn format_context_window_guidance(limit: u64) -> String {
+    format!("YOUR CONTEXT WINDOW LIMIT IS {limit} TOKENS. {CONTEXT_WINDOW_POLICY}")
+}
+
 pub fn format_context_window_limit(limit: u64) -> String {
-    format!(
-        "{META_OPEN}YOUR CONTEXT WINDOW LIMIT IS {limit} TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.{META_CLOSE}"
-    )
+    let guidance = format_context_window_guidance(limit);
+    format!("{META_OPEN}{guidance}{META_CLOSE}")
+}
+
+pub fn format_compacted_context_window(limit: u64) -> String {
+    let guidance = format_context_window_guidance(limit);
+    format!("{META_OPEN}{CONTEXT_COMPACTED_NOTICE} {guidance}{META_CLOSE}")
+}
+
+fn format_compacted_notice() -> String {
+    format!("{META_OPEN}{CONTEXT_COMPACTED_NOTICE}{META_CLOSE}")
 }
 
 fn append_debug_hook(message: String, hook_event_name: &str) -> String {
@@ -63,20 +75,30 @@ fn context_window_message(input: &HookInput) -> Option<String> {
     }
 }
 
-fn context_window_limit_message(input: &HookInput) -> Option<String> {
+fn context_window_limit(input: &HookInput) -> Option<u64> {
     let session_file = input.transcript_path.as_deref()?;
 
     match read_context_window_limit(session_file) {
-        Ok(Some(limit)) => Some(format_context_window_limit(limit)),
+        Ok(Some(limit)) => Some(limit),
         Ok(None) | Err(_) => None,
     }
+}
+
+fn context_window_limit_message(input: &HookInput) -> Option<String> {
+    context_window_limit(input).map(format_context_window_limit)
+}
+
+fn compacted_context_window_message(input: &HookInput) -> String {
+    context_window_limit(input)
+        .map(format_compacted_context_window)
+        .unwrap_or_else(format_compacted_notice)
 }
 
 pub fn message_for_hook(input: &HookInput) -> Option<String> {
     match (input.hook_event_name.as_deref(), input.source.as_deref()) {
         (Some("SessionStart"), Some("startup")) => context_window_limit_message(input),
         (Some("SubagentStart"), _) => context_window_limit_message(input),
-        (Some("SessionStart"), Some("compact")) => Some(CONTEXT_COMPACTED_MESSAGE.to_owned()),
+        (Some("SessionStart"), Some("compact")) => Some(compacted_context_window_message(input)),
         (Some("UserPromptSubmit"), _) | (Some("PostToolUse"), _) => context_window_message(input),
         _ => None,
     }
@@ -108,6 +130,10 @@ mod tests {
     use serde_json::json;
     use std::fs;
 
+    const EXPECTED_CONTEXT_WINDOW_LIMIT: &str = "<meta>YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. AUTOMATIC COMPACTION MAY OCCUR BEFORE THE LIMIT IS REACHED. UNLESS APPLICABLE INSTRUCTIONS SPECIFY DIFFERENT BEHAVIOR, FROM 70% REPORTED USAGE ONWARD, KEEP THE RISK OF COMPACTION IN MIND AS YOU CONTINUE WORKING AND MAKE SURE CONTEXT COMPACTION DOES NOT CAUSE THE LOSS OF INFORMATION NEEDED TO CONTINUE WORK CORRECTLY, INCLUDING KEY REQUIREMENTS, DECISIONS, INTERMEDIATE RESULTS, AND TASK STATE.</meta>";
+    const EXPECTED_COMPACTED_CONTEXT_WINDOW: &str = "<meta>YOUR CONTEXT WAS JUST COMPACTED. MAKE SURE ALL INFORMATION NEEDED TO CONTINUE WORK CORRECTLY REMAINS AVAILABLE. YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. AUTOMATIC COMPACTION MAY OCCUR BEFORE THE LIMIT IS REACHED. UNLESS APPLICABLE INSTRUCTIONS SPECIFY DIFFERENT BEHAVIOR, FROM 70% REPORTED USAGE ONWARD, KEEP THE RISK OF COMPACTION IN MIND AS YOU CONTINUE WORKING AND MAKE SURE CONTEXT COMPACTION DOES NOT CAUSE THE LOSS OF INFORMATION NEEDED TO CONTINUE WORK CORRECTLY, INCLUDING KEY REQUIREMENTS, DECISIONS, INTERMEDIATE RESULTS, AND TASK STATE.</meta>";
+    const EXPECTED_COMPACTED_NOTICE: &str = "<meta>YOUR CONTEXT WAS JUST COMPACTED. MAKE SURE ALL INFORMATION NEEDED TO CONTINUE WORK CORRECTLY REMAINS AVAILABLE.</meta>";
+
     #[test]
     fn formats_requested_context_marker() {
         assert_eq!(
@@ -130,7 +156,15 @@ mod tests {
     fn formats_startup_context_limit() {
         assert_eq!(
             format_context_window_limit(258_400),
-            "<meta>YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.</meta>"
+            EXPECTED_CONTEXT_WINDOW_LIMIT
+        );
+    }
+
+    #[test]
+    fn formats_compacted_context_limit() {
+        assert_eq!(
+            format_compacted_context_window(258_400),
+            EXPECTED_COMPACTED_CONTEXT_WINDOW
         );
     }
 
@@ -150,8 +184,7 @@ mod tests {
             json!({
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
-                    "additionalContext":
-                        "<meta>YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.</meta>"
+                    "additionalContext": EXPECTED_CONTEXT_WINDOW_LIMIT
                 }
             })
         );
@@ -173,8 +206,7 @@ mod tests {
             json!({
                 "hookSpecificOutput": {
                     "hookEventName": "SubagentStart",
-                    "additionalContext":
-                        "<meta>YOUR CONTEXT WINDOW LIMIT IS 258400 TOKENS. CODEX MAY AUTO-COMPACT BEFORE REPORTED USAGE REACHES THE LIMIT, SO PRESERVE IMPORTANT TASK STATE IN ADVANCE.</meta>"
+                    "additionalContext": EXPECTED_CONTEXT_WINDOW_LIMIT
                 }
             })
         );
@@ -182,38 +214,61 @@ mod tests {
 
     #[test]
     fn returns_compaction_output() {
+        let temp = TempDirectory::new();
+        let rollout = temp.path().join("rollout-test-thread.jsonl");
+        fs::write(&rollout, format!("{}\n", task_started(258_400))).unwrap();
         let compact = HookInput {
+            transcript_path: Some(rollout),
             hook_event_name: Some("SessionStart".to_owned()),
             source: Some("compact".to_owned()),
-            ..HookInput::default()
         };
         assert_eq!(
             serde_json::to_value(create_hook_output(&compact).unwrap()).unwrap(),
             json!({
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
-                    "additionalContext":
-                        "<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>"
+                    "additionalContext": EXPECTED_COMPACTED_CONTEXT_WINDOW
                 }
             })
         );
     }
 
     #[test]
-    fn appends_originating_hook_in_debug_mode() {
-        let session_start = HookInput {
+    fn returns_compaction_notice_when_limit_is_unknown() {
+        let compact = HookInput {
             hook_event_name: Some("SessionStart".to_owned()),
             source: Some("compact".to_owned()),
             ..HookInput::default()
         };
+
+        assert_eq!(
+            message_for_hook(&compact).as_deref(),
+            Some(EXPECTED_COMPACTED_NOTICE)
+        );
+    }
+
+    #[test]
+    fn appends_originating_hook_in_debug_mode() {
+        let temp = TempDirectory::new();
+        let rollout = temp.path().join("rollout-test-thread.jsonl");
+        fs::write(&rollout, format!("{}\n", task_started(258_400))).unwrap();
+        let session_start = HookInput {
+            transcript_path: Some(rollout),
+            hook_event_name: Some("SessionStart".to_owned()),
+            source: Some("compact".to_owned()),
+        };
+        let expected = EXPECTED_COMPACTED_CONTEXT_WINDOW.replacen(
+            META_CLOSE,
+            " (hook: SessionStart)</meta>",
+            1,
+        );
         assert_eq!(
             serde_json::to_value(create_hook_output_with_debug(&session_start, true).unwrap())
                 .unwrap(),
             json!({
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
-                    "additionalContext":
-                        "<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED. (hook: SessionStart)</meta>"
+                    "additionalContext": expected
                 }
             })
         );

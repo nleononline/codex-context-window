@@ -36,7 +36,7 @@ jobs:
               '{"hook_event_name":"SessionStart","source":"compact"}' |
               /bin/sh "$PLUGIN_ROOT/hooks/run-context-window.sh"
           )"
-          expected='{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>"}}'
+          expected='{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<meta>YOUR CONTEXT WAS JUST COMPACTED. MAKE SURE ALL INFORMATION NEEDED TO CONTINUE WORK CORRECTLY REMAINS AVAILABLE.</meta>"}}'
           test "$output" = "$expected"
       - name: Smoke test Windows launcher
         if: runner.os == 'Windows'
@@ -52,7 +52,7 @@ jobs:
           $message = (
             $output | ConvertFrom-Json
           ).hookSpecificOutput.additionalContext
-          if ($message -ne '<meta>YOUR CONTEXT WAS JUST COMPACTED. VERIFY THAT THE TASK GOAL, REQUIREMENTS, DECISIONS, AND CURRENT PROGRESS WERE PRESERVED.</meta>') {
+          if ($message -ne '<meta>YOUR CONTEXT WAS JUST COMPACTED. MAKE SURE ALL INFORMATION NEEDED TO CONTINUE WORK CORRECTLY REMAINS AVAILABLE.</meta>') {
             throw "Unexpected hook output: $output"
           }
 
