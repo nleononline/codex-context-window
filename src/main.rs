@@ -1,6 +1,4 @@
-use codex_context_window::{
-    create_hook_output_with_debug, environment_codex_home, environment_debug_enabled, HookInput,
-};
+use codex_context_window::{create_hook_output_with_debug, environment_debug_enabled, HookInput};
 use std::io::{self, Read, Write};
 
 fn debug(message: &str) {
@@ -24,10 +22,7 @@ fn main() {
         }
     };
 
-    let codex_home = environment_codex_home();
-    let Some(output) =
-        create_hook_output_with_debug(&input, codex_home.as_deref(), environment_debug_enabled())
-    else {
+    let Some(output) = create_hook_output_with_debug(&input, environment_debug_enabled()) else {
         return;
     };
 

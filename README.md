@@ -50,6 +50,7 @@ The plugin includes prebuilt binaries for macOS, Linux, and Windows on Arm64 and
 ### Hook coverage
 
 - `SessionStart` with source `startup`: provides the effective context-window limit and warns that automatic compaction may happen before reported usage reaches it.
+- `SubagentStart`: provides the effective context-window limit for the new subagent from its own session file.
 - `UserPromptSubmit` and `PostToolUse`: provide the latest available context-window usage.
 - `SessionStart` with source `compact`: reminds the model to verify that the task goal, requirements, decisions, and current progress were not lost.
 

@@ -1,6 +1,6 @@
 {
   "name": "codex-context-window",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Inject Codex context-window limits and usage through lifecycle hooks.",
   "author": {
     "name": "Nikolai Leon"
