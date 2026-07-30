@@ -1,9 +1,10 @@
 {
   "name": "codex-context-window",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Inject Codex context-window limits and usage through lifecycle hooks.",
   "author": {
-    "name": "Nikolai Leon"
+    "name": "Nikolai Leon",
+    "url": "https://github.com/nleononline"
   },
   "homepage": "https://github.com/nleononline/codex-context-window",
   "repository": "https://github.com/nleononline/codex-context-window",
@@ -19,12 +20,14 @@
     "shortDescription": "Keep Codex aware of its context-window limit and usage.",
     "longDescription": "Uses bundled native binaries to read the startup context-window limit and latest server-reported token usage from the current local Codex session file, then injects compact model-visible signals at supported lifecycle points.",
     "developerName": "Nikolai Leon",
-    "category": "Productivity",
+    "category": "Developer Tools",
     "capabilities": [
       "Hooks"
     ],
+    "websiteURL": "https://github.com/nleononline/codex-context-window",
     "defaultPrompt": [
       "Show my current Codex context-window limit and usage."
     ]
-  }
+  },
+  "hooks": "./hooks/hooks.json"
 }
